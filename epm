@@ -1,0 +1,294 @@
+#!/bin/bash
+
+PREFIX=~/.epm
+CACHE=$PREFIX/cache
+AVAILABLES=$PREFIX/available
+
+if [ ! -d $PREFIX ]; then
+	mkdir $PREFIX
+fi
+
+if [ ! -d $CACHE ]; then
+	mkdir $CACHE
+fi
+
+
+function help() {
+	cat << EOF
+Usage: $0 <command> [<arguments>]
+ Commands
+  download | do <packages>       Downloads <packages> into epm's cache
+                                 and verfies them
+  verify | ve <packages>         Verifies the integrity of <packages>
+  install | in <packages>        Installs <packages> into the pkgs directory
+                                 and sets them as the current version
+  install-required | ir <file>   Installs packages specified in <file>
+  remove | re | rm <packages>    Removes <packages>
+  describe | de <packages>       Shows the description of <packages>
+  open | op <package>            Opens the <package>s archive file
+                                 using xdg-open
+  web <package>                  Opens a web browser with the <package>'s URL
+  list | li | ls                 Shows a list of available Packages
+  update | up                    Updates the list of available packages
+                                 using git pull in $AVAILABLES
+  set-current <package>          Sets <package> as the current version
+  init <git url>                 Clones <git url> into $AVAILABLES
+
+ Packages names may be specified by their name (e.g. cmsis) or
+ by their versioned name (e.g. cmsis-1.1.0). When no version is given,
+ epm selects the latest version.
+
+EOF
+}
+
+
+if [ ! -d $AVAILABLES ]; then
+	help
+	echo "$AVAILABLES does not exist"
+	echo "create it using epm init"
+	exit -1
+fi
+
+function ask {
+    read -n 1 -r -p "$1 "
+    if [[ $REPLY =~ ^[Yy]$ ]]
+    then
+            return 0;
+    else
+			echo
+            echo "Abort.."
+            exit
+    fi
+}
+
+function check_setup() {
+	if [ ! -d $PREFIX ]; then
+		echo "run setup first"
+		exit 1
+	fi
+}
+
+function loadpkg() {
+	PKGNAME=$1
+	if [ ! -f $AVAILABLES/$PKGNAME ]; then
+		PKGNAME=$(ls -v $AVAILABLES/$1-* 2> /dev/null | tail -n1  |xargs basename 2> /dev/null)
+		if [ $? -gt 0 ]; then
+			echo "Package not available."
+			exit 1
+		fi
+	fi
+	EXCLUDE=
+	MVPATH=
+	MAKEFILE=
+	. $AVAILABLES/$PKGNAME
+	ARCHIVE=$CACHE/$(basename $DL).$VER
+	REALNAME=$NAME-$VER
+	if [ "$MVPATH" == "" ]; then
+		MVPATH=$EXPATH
+	fi
+	if [ "$EXCLUDE" == "" ]; then
+		EXCLUDE=()
+	fi
+}
+	
+
+function verify() {
+	loadpkg $1
+	echo -n "Verifying ..."
+	echo $MD5SUM $ARCHIVE | md5sum --status -c -
+	if [ $? -gt 0 ]; then
+		echo "error"
+		exit 1
+	else
+		echo "done"
+	fi
+}
+
+function download() {
+	loadpkg $1
+	echo "Downloading $PKGNAME"
+	if [ ! -f $ARCHIVE ]; then
+		wget $DL -O $ARCHIVE
+		if [ $? -gt 0 ]; then
+			echo "Download error."
+			exit 1
+		fi
+		verify $REALNAME
+	else
+		echo "Already downloaded"
+	fi
+	
+}
+
+function install() {
+	download $1
+	echo "Installing $PKGNAME"
+	if [ ! -d pkgs ]; then 
+		mkdir pkgs
+	fi
+	if [ -d pkgs/$REALNAME ]; then
+		echo "Package already installed."
+		ask "Remove and reinstall?"
+		if [ $? == 0 ]; then
+			remove $REALNAME
+			echo
+		fi
+	fi
+	TMPDIR=$(mktemp -d)
+	echo -n "Extracting ..."
+	unzip -q $ARCHIVE ${EXPATH[*]} -d $TMPDIR -x ${EXCLUDE[*]}
+	echo "done"
+	echo -n "Installing ..."
+	mkdir pkgs/$REALNAME
+	mv -t pkgs/$REALNAME ${MVPATH[@]/#/$TMPDIR/}
+	rm -Rf $TMPDIR
+	echo "$MAKEFILE" > pkgs/$REALNAME/Makefile
+	echo "done"
+	setcur $REALNAME
+}
+
+function setcur() {
+	loadpkg $1
+	ln -sf $REALNAME pkgs/$NAME
+	echo "Set $REALNAME as current $NAME"
+}
+
+function remove() {
+	loadpkg $1
+	rm -Rf pkgs/$REALNAME
+	rm -Rf pkgs/$NAME
+}
+
+function describe() {
+	loadpkg $1
+	echo "Name          : $PKGNAME"
+	echo "Description   : $DESC"
+	echo "Compatibility : ${COMPAT[*]}"
+	echo "URL           : $URL"
+	echo "Download URL  : $DL"
+	echo "Version       : $VER"
+	echo "Archive       : $ARCHIVE"
+}
+
+function list() {
+	for line in $(ls $PREFIX/available); do
+	loadpkg $line
+	echo "$line : $DESC"
+	done
+}
+
+function open() {
+	loadpkg $1
+	xdg-open $ARCHIVE
+}
+
+function web() {
+	loadpkg $1
+	xdg-open $URL
+}
+
+function update() {
+	cd $AVAILABLES
+	git pull
+}
+
+function installreq() {
+	for line in $(cat $1) ; do
+		install $line
+	done
+}
+
+function initialize() {
+	if [ -d $AVAILABLES/.git ]; then
+		echo $AVAILABLES exists, not initalizing
+	else
+		mkdir -p $AVAILABLES
+		cd $AVAILABLES
+		git clone $1 .
+	fi
+}
+
+case "$1" in
+	"download" | "do")
+		shift
+		for x in $@ 
+		do
+			download $x
+			echo
+		done
+	;;
+	
+	"verify" | "ve")
+		shift
+		for x in $@ 
+		do
+			verify $x
+			echo
+		done
+	;;
+	
+	"install" | "in")
+		shift
+		for x in $@ 
+		do
+			install $x
+			echo
+		done
+	;;
+	
+	"remove" | "rm" | "re")
+		shift
+		for x in $@ 
+		do
+			remove $x
+			echo
+		done
+	;;
+	
+	"describe" | "de")
+		shift
+		for x in $@ 
+		do
+			describe $x
+			echo
+		done
+		
+	;;
+	
+	"open" | "op")
+		open "$2"
+	;;
+	
+	"web" )
+		web "$2"
+	;;
+	
+	"list" | "li" | "ls")
+		list
+	;;
+	
+	"update" | "up")
+		update
+	;;
+	
+	"init" )
+		initialize "$2"
+	;;
+	
+	"install-required" | "ir")
+		installreq "$2"
+	;;
+	
+	"set-current" )
+		setcur "$2"
+	;;
+	
+	"help" | "he")
+		help
+	;;
+	
+	*) 
+		help
+		exit 1
+	;;
+esac
