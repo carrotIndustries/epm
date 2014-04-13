@@ -1,0 +1,27 @@
+epm - the embedded package manager
+
+epm is designed to manage libraries used in embedded software projects
+
+
+Usage: ./epm <command> [<arguments>]
+ Commands
+  download | do <packages>       Downloads <packages> into epm's cache
+                                 and verfies them
+  verify | ve <packages>         Verifies the integrity of <packages>
+  install | in <packages>        Installs <packages> into the pkgs directory
+                                 and sets them as the current version
+  install-required | ir <file>   Installs packages specified in <file>
+  remove | re | rm <packages>    Removes <packages>
+  describe | de <packages>       Shows the description of <packages>
+  open | op <package>            Opens the <package>s archive file
+                                 using xdg-open
+  web <package>                  Opens a web browser with the <package>'s URL
+  list | li | ls                 Shows a list of available Packages
+  update | up                    Updates the list of available packages
+                                 using git pull in $AVAILABLES
+  set-current <package>          Sets <package> as the current version
+  init <git url>                 Clones <git url> into $AVAILABLES
+
+ Packages names may be specified by their name (e.g. cmsis) or
+ by their versioned name (e.g. cmsis-1.1.0). When no version is given,
+ epm selects the latest version.
