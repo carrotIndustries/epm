@@ -171,7 +171,7 @@ function describe() {
 }
 
 function list() {
-	for line in $(ls $PREFIX/available); do
+	for line in $(ls $PREFIX/available | grep -v README); do
 	loadpkg $line
 	echo "$line : $DESC"
 	done
